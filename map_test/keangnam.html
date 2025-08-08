@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Maplibre Vientiane</title>
+  <title>Maplibre Keangnam</title>
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
   <script src="https://unpkg.com/maplibre-gl@3.3.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@3.3.1/dist/maplibre-gl.css" rel="stylesheet" />
@@ -41,11 +41,11 @@
 
 <div id="map"></div>
 <div id="controls">
-  <label><input type="checkbox" id="toggle-provinces" checked> Provinces</label><br>
-  <label><input type="checkbox" id="toggle-districts" checked> Districts</label><br>
-  <label><input type="checkbox" id="toggle-roads" checked> Roads</label><br>
-  <label><input type="checkbox" id="toggle-parcels" checked> Parcels</label><br>
-  <label><input type="checkbox" id="toggle-landvaluesubzone" checked> Value Point</label>
+
+  <label><input type="checkbox" id="toggle-intervals" checked> Roads</label><br>
+  <label><input type="checkbox" id="toggle-buildings" checked> Buildings</label><br>
+  <label><input type="checkbox" id="toggle-stations" checked> Stations</label><br>
+  <label><input type="checkbox" id="toggle-entrances" checked> Entrances</label>
 </div>
 <div id="zoom-level">Zoom: --</div>
 
@@ -81,47 +81,21 @@ const map = new maplibregl.Map({
         minzoom: 0,
         maxzoom: 24
       },
-	{
-	  id: 'provinces',
-	  type: 'fill',
-	  source: 'tegola',
-	  'source-layer': 'provinces',
-	  paint: {
-		'fill-color': '#faf20a',
-		'fill-outline-color': '#666666',
-		'fill-opacity': 0.3
-	  },
-	  minzoom: 0,
-	  maxzoom: 24
-	},	 
-	{
-	  id: 'districts',
-	  type: 'fill',
-	  source: 'tegola',
-	  'source-layer': 'districts',
-	  paint: {
-		'fill-color': '#05f7c7',
-		'fill-outline-color': '#8b6bed',
-		'fill-opacity': 0.5
-	  },
-	  minzoom: 0,
-	  maxzoom: 24
-	},	 	
       {
-        id: 'roads',
+        id: 'kn_intervals',
         type: 'line',
         source: 'tegola',
-        'source-layer': 'roads',
+        'source-layer': 'kn_intervals',
         paint: {
           'line-color': '#ff0000',
           'line-width': 2
         }
       },
       {
-        id: 'parcels',
+        id: 'kn_buildings',
         type: 'fill',
         source: 'tegola',
-        'source-layer': 'parcels',
+        'source-layer': 'kn_buildings',
         paint: {
           'fill-color': '#0786e0',
           'fill-opacity': 0.8
@@ -129,15 +103,28 @@ const map = new maplibregl.Map({
         minzoom: 0,
         maxzoom: 24
       },
+      {
+        id: 'kn_stations',
+        type: 'fill',
+        source: 'tegola',
+        'source-layer': 'kn_stations',
+        paint: {
+          'fill-color': '#b707ed',
+          'fill-opacity': 0.9
+        },
+        minzoom: 0,
+        maxzoom: 24
+      },	  
+	  
 	{
-	  id: 'landvaluesubzone',
+	  id: 'kn_bld_entrance',
 	  type: 'circle',
 	  source: 'tegola',
-	  'source-layer': 'landvaluesubzone',
+	  'source-layer': 'kn_bld_entrance',
 	  paint: {
 		'circle-radius': 5,
-		'circle-color': '#0ecb81',
-		'circle-stroke-color': '#003300',
+		'circle-color': '#fc3f6e',
+		'circle-stroke-color': '#dbcd07',
 		'circle-stroke-width': 1
 	  },
 	  minzoom: 0,
@@ -145,31 +132,28 @@ const map = new maplibregl.Map({
 	}	  
     ]
   },
-  center: [102.6090, 17.9600],
-  zoom: 13
+  center: [127.0276, 37.4979],
+  zoom: 12
 });
 
 // Toggle layers
-document.getElementById('toggle-roads').addEventListener('change', function() {
+document.getElementById('toggle-intervals').addEventListener('change', function() {
   const visibility = this.checked ? 'visible' : 'none';
-  map.setLayoutProperty('roads', 'visibility', visibility);
+  map.setLayoutProperty('kn_intervals', 'visibility', visibility);
 });
 
-document.getElementById('toggle-parcels').addEventListener('change', function() {
+document.getElementById('toggle-buildings').addEventListener('change', function() {
   const visibility = this.checked ? 'visible' : 'none';
-  map.setLayoutProperty('parcels', 'visibility', visibility);
+  map.setLayoutProperty('kn_buildings', 'visibility', visibility);
 });
 
-document.getElementById('toggle-provinces').addEventListener('change', function() {
-map.setLayoutProperty('provinces', 'visibility', this.checked ? 'visible' : 'none');
+document.getElementById('toggle-stations').addEventListener('change', function() {
+  const visibility = this.checked ? 'visible' : 'none';
+  map.setLayoutProperty('kn_stations', 'visibility', visibility);
 });
 
-document.getElementById('toggle-districts').addEventListener('change', function() {
-map.setLayoutProperty('districts', 'visibility', this.checked ? 'visible' : 'none');
-});
-
-document.getElementById('toggle-landvaluesubzone').addEventListener('change', function() {
-map.setLayoutProperty('landvaluesubzone', 'visibility', this.checked ? 'visible' : 'none');
+document.getElementById('toggle-entrances').addEventListener('change', function() {
+map.setLayoutProperty('kn_bld_entrance', 'visibility', this.checked ? 'visible' : 'none');
 });
 
 // Update zoom level display
