@@ -3,13 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <title>Vientiane Roads</title>
-  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
   <script src="https://unpkg.com/maplibre-gl@3.3.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@3.3.1/dist/maplibre-gl.css" rel="stylesheet" />
   <style>
     body { margin: 0; padding: 0; }
     #map { position: absolute; top: 0; bottom: 0; width: 100%; }
-
     #controls {
       position: absolute;
       top: 10px;
@@ -22,7 +21,6 @@
       box-shadow: 0 1px 4px rgba(0,0,0,0.3);
       z-index: 1;
     }
-
     #zoom-level {
       position: absolute;
       bottom: 10px;
@@ -52,16 +50,13 @@
 <script>
 const map = new maplibregl.Map({
   container: 'map',
-    // Add this option to ensure antialiasing is enabled
   antialias: true,
   style: {
     version: 8,
     sources: {
       osm: {
         type: 'raster',
-        tiles: [
-          'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
-        ],
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
         tileSize: 256,
         attribution: '© OpenStreetMap contributors'
       },
@@ -74,39 +69,33 @@ const map = new maplibregl.Map({
       }
     },
     layers: [
+      { id: 'osm', type: 'raster', source: 'osm', minzoom: 0, maxzoom: 24 },
       {
-        id: 'osm',
-        type: 'raster',
-        source: 'osm',
+        id: 'provinces',
+        type: 'fill',
+        source: 'tegola',
+        'source-layer': 'provinces',
+        paint: {
+          'fill-color': '#faf20a',
+          'fill-outline-color': '#666666',
+          'fill-opacity': 0.7
+        },
         minzoom: 0,
         maxzoom: 24
       },
-	{
-	  id: 'provinces',
-	  type: 'fill',
-	  source: 'tegola',
-	  'source-layer': 'provinces',
-	  paint: {
-		'fill-color': '#faf20a',
-		'fill-outline-color': '#666666',
-		'fill-opacity': 0.7
-	  },
-	  minzoom: 0,
-	  maxzoom: 24
-	},	 
-	{
-	  id: 'districts',
-	  type: 'fill',
-	  source: 'tegola',
-	  'source-layer': 'districts',
-	  paint: {
-		'fill-color': '#05f7c7',
-		'fill-outline-color': '#8b6bed',
-		'fill-opacity': 0.3
-	  },
-	  minzoom: 0,
-	  maxzoom: 24
-	},	 	
+      {
+        id: 'districts',
+        type: 'fill',
+        source: 'tegola',
+        'source-layer': 'districts',
+        paint: {
+          'fill-color': '#05f7c7',
+          'fill-outline-color': '#8b6bed',
+          'fill-opacity': 0.3
+        },
+        minzoom: 0,
+        maxzoom: 24
+      },
       {
         id: 'roads',
         type: 'line',
@@ -129,56 +118,178 @@ const map = new maplibregl.Map({
         minzoom: 0,
         maxzoom: 24
       },
-	{
-	  id: 'landvaluesubzone',
-	  type: 'circle',
-	  source: 'tegola',
-	  'source-layer': 'landvaluesubzone',
-	  paint: {
-		'circle-radius': 5,
-		'circle-color': '#0ecb81',
-		'circle-stroke-color': '#003300',
-		'circle-stroke-width': 1
+	  {
+		  id: 'parcels-outline',
+		  type: 'line',
+		  source: 'tegola',
+		  'source-layer': 'parcels',
+		  paint: {
+			'line-color': '#800000',    // dark red stroke, change as you want
+			'line-width': 1
+		  },
+		  minzoom: 0,
+		  maxzoom: 24
 	  },
-	  minzoom: 0,
-	  maxzoom: 24
-	}	  
+      {
+        id: 'landvaluesubzone',
+        type: 'circle',
+        source: 'tegola',
+        'source-layer': 'landvaluesubzone',
+        paint: {
+          'circle-radius': 5,
+          'circle-color': '#0ecb81',
+          'circle-stroke-color': '#003300',
+          'circle-stroke-width': 1
+        },
+        minzoom: 0,
+        maxzoom: 24
+      }
     ]
   },
   center: [102.6090, 17.9600],
   zoom: 6
 });
 
-// Toggle layers
+map.on('load', () => {
+  // Highlight source for selected feature(s)
+  map.addSource('highlight-source', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] }
+  });
+
+  // Fill highlight layer (for polygons)
+  map.addLayer({
+    id: 'feature-highlight-fill',
+    type: 'fill',
+    source: 'highlight-source',
+    paint: {
+      'fill-color': '#ffff00',
+      'fill-opacity': 1,
+      'fill-antialias': true
+    },
+    layout: { visibility: 'none' }
+  });
+
+  // Line highlight layer (for line geometries)
+  map.addLayer({
+    id: 'feature-highlight-line',
+    type: 'line',
+    source: 'highlight-source',
+    paint: {
+      'line-color': '#ffff00',
+      'line-width': 5
+    },
+    layout: { visibility: 'none' }
+  });
+
+  // Circle highlight layer (for points)
+  map.addLayer({
+    id: 'feature-highlight-circle',
+    type: 'circle',
+    source: 'highlight-source',
+    paint: {
+      'circle-radius': 10,
+      'circle-color': '#ffff00',
+      'circle-stroke-color': '#ff9900',
+      'circle-stroke-width': 3
+    },
+    layout: { visibility: 'none' }
+  });
+});
+
+// Helper to show only the correct highlight layer based on geometry type
+function setHighlightLayer(type) {
+  const layers = ['feature-highlight-fill', 'feature-highlight-line', 'feature-highlight-circle'];
+  layers.forEach(id => map.setLayoutProperty(id, 'visibility', 'none'));
+  
+  if (type === 'Polygon' || type === 'MultiPolygon') {
+    map.setLayoutProperty('feature-highlight-fill', 'visibility', 'visible');
+  } else if (type === 'LineString' || type === 'MultiLineString') {
+    map.setLayoutProperty('feature-highlight-line', 'visibility', 'visible');
+  } else if (type === 'Point' || type === 'MultiPoint') {
+    map.setLayoutProperty('feature-highlight-circle', 'visibility', 'visible');
+  }
+}
+
+// Layer toggles (unchanged)
 document.getElementById('toggle-roads').addEventListener('change', function() {
-  const visibility = this.checked ? 'visible' : 'none';
-  map.setLayoutProperty('roads', 'visibility', visibility);
+  map.setLayoutProperty('roads', 'visibility', this.checked ? 'visible' : 'none');
 });
 
 document.getElementById('toggle-parcels').addEventListener('change', function() {
   const visibility = this.checked ? 'visible' : 'none';
   map.setLayoutProperty('parcels', 'visibility', visibility);
+  map.setLayoutProperty('parcels-outline', 'visibility', visibility);
 });
 
 document.getElementById('toggle-provinces').addEventListener('change', function() {
-map.setLayoutProperty('provinces', 'visibility', this.checked ? 'visible' : 'none');
+  map.setLayoutProperty('provinces', 'visibility', this.checked ? 'visible' : 'none');
 });
-
 document.getElementById('toggle-districts').addEventListener('change', function() {
-map.setLayoutProperty('districts', 'visibility', this.checked ? 'visible' : 'none');
+  map.setLayoutProperty('districts', 'visibility', this.checked ? 'visible' : 'none');
 });
-
 document.getElementById('toggle-landvaluesubzone').addEventListener('change', function() {
-map.setLayoutProperty('landvaluesubzone', 'visibility', this.checked ? 'visible' : 'none');
+  map.setLayoutProperty('landvaluesubzone', 'visibility', this.checked ? 'visible' : 'none');
 });
 
-// Update zoom level display
+// Zoom display (unchanged)
 function updateZoomDisplay() {
-  const zoom = map.getZoom().toFixed(2);
-  document.getElementById('zoom-level').innerText = `Zoom: ${zoom}`;
+  document.getElementById('zoom-level').innerText = `Zoom: ${map.getZoom().toFixed(2)}`;
 }
 map.on('zoom', updateZoomDisplay);
 map.on('load', updateZoomDisplay);
+
+// Popup instance
+const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
+
+// Click event to highlight & show popup
+map.on('click', e => {
+  const features = map.queryRenderedFeatures(e.point, {
+    layers: ['provinces', 'districts', 'roads', 'parcels', 'landvaluesubzone']
+  });
+
+  if (!features.length) {
+    popup.remove();
+    if (map.getSource('highlight-source')) {
+      map.getSource('highlight-source').setData({ type: 'FeatureCollection', features: [] });
+    }
+    setHighlightLayer(null);
+    return;
+  }
+
+  // Use the first clicked feature
+  const feature = features[0];
+
+  // Query all features with same id across tiles from source for full highlight
+  const fullFeatures = map.querySourceFeatures('tegola', {
+    sourceLayer: feature.layer['source-layer'],
+    filter: ['==', 'id', feature.properties.id]
+  });
+
+  const highlightFeatures = fullFeatures.length ? fullFeatures : [feature];
+
+  map.getSource('highlight-source').setData({
+    type: 'FeatureCollection',
+    features: highlightFeatures
+  });
+
+  setHighlightLayer(feature.geometry.type);
+
+  // Build popup content: Feature type and all properties
+  let html = `<strong>Feature type: ${feature.layer.id}</strong><br><table>`;
+  for (const key in feature.properties) {
+    html += `<tr><td><strong>${key}</strong></td><td>${feature.properties[key]}</td></tr>`;
+  }
+  html += '</table>';
+
+  popup.setLngLat(e.lngLat).setHTML(html).addTo(map);
+});
+
+// Change mouse cursor to pointer on hover for interactive layers
+['provinces', 'districts', 'roads', 'parcels', 'landvaluesubzone'].forEach(layer => {
+  map.on('mouseenter', layer, () => map.getCanvas().style.cursor = 'pointer');
+  map.on('mouseleave', layer, () => map.getCanvas().style.cursor = '');
+});
 </script>
 </body>
 </html>
