@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Keangnam Buildings with Clustering</title>
+  <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <script src="https://unpkg.com/maplibre-gl@3.3.1/dist/maplibre-gl.js"></script>
+  <link href="https://unpkg.com/maplibre-gl@3.3.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    body { margin: 0; padding: 0; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: white;
+      padding: 10px;
+      border-radius: 4px;
+      font-family: sans-serif;
+      font-size: 14px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+      z-index: 1;
+    }
+
+    #zoom-level {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      background: rgba(255,255,255,0.9);
+      padding: 5px 10px;
+      font-family: sans-serif;
+      font-size: 14px;
+      border-radius: 4px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+      z-index: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="controls">
+    <label><input type="checkbox" id="toggle-intervals" checked> Roads</label><br>
+    <label><input type="checkbox" id="toggle-buildings" checked> Buildings</label><br>
+    <label><input type="checkbox" id="toggle-stations" checked> Stations</label><br>
+    <label><input type="checkbox" id="toggle-entrances" checked> Entrances (Clustered)</label>
+  </div>
+  <div id="zoom-level">Zoom: --</div>
+
+  <script>
+    const map = new maplibregl.Map({
+      container: 'map',
+      antialias: true,
+      style: {
+        version: 8,
+        sources: {
+          osm: {
+            type: 'raster',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: '© OpenStreetMap contributors'
+          },
+          tegola: {
+            type: 'vector',
+            tiles: ['http://www.sntglobal.net:8680/maps/keangnam/{z}/{x}/{y}.vector.pbf'],
+            minzoom: 0,
+            maxzoom: 20,
+            attribution: '© Tegola'
+          }
+        },
+        layers: [
+          { id: 'osm', type: 'raster', source: 'osm', minzoom: 0, maxzoom: 24 },
+          {
+            id: 'kn_intervals',
+            type: 'line',
+            source: 'tegola',
+            'source-layer': 'kn_intervals',
+            paint: { 'line-color': '#ff0000', 'line-width': 2 }
+          },
+          {
+            id: 'kn_buildings',
+            type: 'fill',
+            source: 'tegola',
+            'source-layer': 'kn_buildings',
+            paint: { 'fill-color': '#0786e0', 'fill-opacity': 0.8 },
+            minzoom: 0,
+            maxzoom: 24
+          },
+          {
+            id: 'kn_stations',
+            type: 'fill',
+            source: 'tegola',
+            'source-layer': 'kn_stations',
+            paint: { 'fill-color': '#b707ed', 'fill-opacity': 0.9 },
+            minzoom: 0,
+            maxzoom: 24
+          },
+          // THIS ORIGINAL LAYER WILL BE HIDDEN AND REPLACED BY THE CLUSTERED LAYERS
+          {
+            id: 'kn_bld_entrance',
+            type: 'circle',
+            source: 'tegola',
+            'source-layer': 'kn_bld_entrance',
+            paint: {
+              'circle-radius': 5,
+              'circle-color': '#fc3f6e',
+              'circle-stroke-color': '#dbcd07',
+              'circle-stroke-width': 1
+            },
+            minzoom: 0,
+            maxzoom: 24
+          }
+        ]
+      },
+      center: [127.05, 37.512], // Centered on Keangnam area
+      zoom: 15 // Start a bit more zoomed in
+    });
+
+    map.on('load', () => {
+      // --- START OF NEW CLUSTERING LOGIC ---
+
+      // Hide the original vector tile layer for entrances
+      map.setLayoutProperty('kn_bld_entrance', 'visibility', 'none');
+
+      // Query all features from the original source layer to create our GeoJSON source.
+      // Note: This queries features currently in the viewport. For a global dataset,
+      // you might need a more robust way to fetch all data, like from a GeoJSON file or API endpoint.
+      const entranceFeatures = map.querySourceFeatures('tegola', {
+        sourceLayer: 'kn_bld_entrance'
+      });
+
+      // Create a new GeoJSON source for the entrances with clustering enabled.
+      map.addSource('entrances-geojson', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: entranceFeatures
+        },
+        cluster: true,
+        clusterMaxZoom: 18, // Max zoom to cluster points on. Clusters will disappear at zoom 18.
+        clusterRadius: 50 // Radius of each cluster when clustering points (defaults to 50)
+      });
+
+      // Add a layer for the cluster circles.
+      map.addLayer({
+        id: 'clusters',
+        type: 'circle',
+        source: 'entrances-geojson',
+        filter: ['has', 'point_count'],
+        maxzoom: 18, // FIX: Explicitly hide this layer at zoom 18 and beyond.
+        paint: {
+          // Use step expressions to style circles based on point count
+          'circle-color': [
+            'step',
+            ['get', 'point_count'],
+            '#51bbd6', // Blue for < 10 points
+            10,
+            '#f1f075', // Yellow for < 30 points
+            30,
+            '#f28cb1'  // Pink for >= 30 points
+          ],
+          'circle-radius': [
+            'step',
+            ['get', 'point_count'],
+            20, // 20px radius for < 10 points
+            10,
+            30, // 30px radius for < 30 points
+            30,
+            40  // 40px radius for >= 30 points
+          ]
+        }
+      });
+
+      // Add a layer for the text label on the cluster circles.
+      map.addLayer({
+        id: 'cluster-count',
+        type: 'symbol',
+        source: 'entrances-geojson',
+        filter: ['has', 'point_count'],
+        maxzoom: 18, // FIX: Explicitly hide this layer at zoom 18 and beyond.
+        layout: {
+          'text-field': '{point_count_abbreviated}',
+          'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+          'text-size': 12
+        }
+      });
+
+      // Add a layer for the unclustered, individual points.
+      map.addLayer({
+        id: 'unclustered-point',
+        type: 'circle',
+        source: 'entrances-geojson',
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-color': '#fc3f6e',
+          'circle-radius': 5,
+          'circle-stroke-width': 1,
+          'circle-stroke-color': '#fff'
+        }
+      });
+
+      // --- END OF NEW CLUSTERING LOGIC ---
+
+
+      map.addSource('highlight-source', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] }
+      });
+
+      map.addLayer({
+        id: 'feature-highlight-fill',
+        type: 'fill',
+        source: 'highlight-source',
+        paint: { 'fill-color': '#ffff00', 'fill-opacity': 0.75 },
+        layout: { visibility: 'none' }
+      });
+
+      map.addLayer({
+        id: 'feature-highlight-lineOnly',
+        type: 'line',
+        source: 'highlight-source',
+        paint: { 'line-color': '#ffff00', 'line-width': 5 },
+        layout: { visibility: 'none' }
+      });
+
+      map.addLayer({
+        id: 'feature-highlight-circle',
+        type: 'circle',
+        source: 'highlight-source',
+        paint: { 'circle-radius': 10, 'circle-color': '#ffff00', 'circle-stroke-color': '#ff9900', 'circle-stroke-width': 3 },
+        layout: { visibility: 'none' }
+      });
+    });
+
+    function setHighlight(type) {
+      const layers = ['feature-highlight-fill', 'feature-highlight-lineOnly', 'feature-highlight-circle'];
+      layers.forEach(id => map.setLayoutProperty(id, 'visibility', 'none'));
+
+      if (type === 'Polygon' || type === 'MultiPolygon') {
+        map.setLayoutProperty('feature-highlight-fill', 'visibility', 'visible');
+      } else if (type === 'LineString' || type === 'MultiLineString') {
+        map.setLayoutProperty('feature-highlight-lineOnly', 'visibility', 'visible');
+      } else if (type === 'Point' || type === 'MultiPoint') {
+        map.setLayoutProperty('feature-highlight-circle', 'visibility', 'visible');
+      }
+    }
+
+    // --- UPDATED LAYER TOGGLES ---
+    document.getElementById('toggle-intervals').onchange = e =>
+      map.setLayoutProperty('kn_intervals', 'visibility', e.target.checked ? 'visible' : 'none');
+
+    document.getElementById('toggle-buildings').onchange = e =>
+      map.setLayoutProperty('kn_buildings', 'visibility', e.target.checked ? 'visible' : 'none');
+
+    document.getElementById('toggle-stations').onchange = e =>
+      map.setLayoutProperty('kn_stations', 'visibility', e.target.checked ? 'visible' : 'none');
+
+    // This checkbox now controls the 3 new cluster layers
+    document.getElementById('toggle-entrances').onchange = e => {
+        const visibility = e.target.checked ? 'visible' : 'none';
+        map.setLayoutProperty('clusters', 'visibility', visibility);
+        map.setLayoutProperty('cluster-count', 'visibility', visibility);
+        map.setLayoutProperty('unclustered-point', 'visibility', visibility);
+    };
+
+
+    function updateZoomDisplay() {
+      document.getElementById('zoom-level').innerText = `Zoom: ${map.getZoom().toFixed(2)}`;
+    }
+    map.on('zoom', updateZoomDisplay);
+    map.on('load', updateZoomDisplay);
+
+    const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
+
+    // --- UPDATED CLICK HANDLER ---
+    map.on('click', e => {
+      // Check for features in the cluster layers first
+      const clusterFeatures = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
+
+      // If a cluster is clicked, zoom into it.
+      if (clusterFeatures.length) {
+        const clusterId = clusterFeatures[0].properties.cluster_id;
+        map.getSource('entrances-geojson').getClusterExpansionZoom(clusterId, (err, zoom) => {
+          if (err) return;
+          map.easeTo({
+            center: clusterFeatures[0].geometry.coordinates,
+            zoom: zoom + 0.5 // zoom in a little bit more than the expansion zoom
+          });
+        });
+        return;
+      }
+
+      // If not a cluster, check for other features as before.
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['kn_intervals', 'kn_buildings', 'kn_stations', 'unclustered-point']
+      });
+
+      if (!features.length) {
+        popup.remove();
+        map.getSource('highlight-source').setData({ type: 'FeatureCollection', features: [] });
+        setHighlight(null);
+        return;
+      }
+
+      const feature = features[0];
+      
+      // For clustered points, the source is different
+      const sourceId = feature.layer.id === 'unclustered-point' ? 'entrances-geojson' : 'tegola';
+      const sourceLayer = feature.layer.id === 'unclustered-point' ? null : feature.layer['source-layer'];
+      
+      const queryOptions = { filter: ['==', 'id', feature.properties.id] };
+      if(sourceLayer) queryOptions.sourceLayer = sourceLayer;
+
+      const fullFeatures = map.querySourceFeatures(sourceId, queryOptions);
+
+      const highlightFeatures = fullFeatures.length ? fullFeatures : [feature];
+      map.getSource('highlight-source').setData({
+        type: 'FeatureCollection',
+        features: highlightFeatures
+      });
+
+      setHighlight(feature.geometry.type);
+
+      let html = `<strong>Feature type: ${feature.layer.id}</strong><br><table>`;
+      for (const key in feature.properties) {
+        html += `<tr><td><strong>${key}</strong></td><td>${feature.properties[key]}</td></tr>`;
+      }
+      html += '</table>';
+      popup.setLngLat(e.lngLat).setHTML(html).addTo(map);
+    });
+
+    // Add pointer cursor on hover for all interactive layers
+    const interactiveLayers = ['kn_intervals', 'kn_buildings', 'kn_stations', 'clusters', 'unclustered-point'];
+    interactiveLayers.forEach(layer => {
+      map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
+      map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
+    });
+  </script>
+</body>
+</html>
