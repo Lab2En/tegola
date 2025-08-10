@@ -53,6 +53,8 @@
       antialias: true,
       style: {
         version: 8,
+        // FIX: Added a 'glyphs' URL to provide the map with font data.
+        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
         sources: {
           osm: {
             type: 'raster',
@@ -117,91 +119,105 @@
     });
 
     map.on('load', () => {
-      // --- START OF NEW CLUSTERING LOGIC ---
-
-      // Hide the original vector tile layer for entrances
-      map.setLayoutProperty('kn_bld_entrance', 'visibility', 'none');
-
-      // Query all features from the original source layer to create our GeoJSON source.
-      // Note: This queries features currently in the viewport. For a global dataset,
-      // you might need a more robust way to fetch all data, like from a GeoJSON file or API endpoint.
-      const entranceFeatures = map.querySourceFeatures('tegola', {
-        sourceLayer: 'kn_bld_entrance'
-      });
-
-      // Create a new GeoJSON source for the entrances with clustering enabled.
-      map.addSource('entrances-geojson', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: entranceFeatures
-        },
-        cluster: true,
-        clusterMaxZoom: 18, // Max zoom to cluster points on. Clusters will disappear at zoom 18.
-        clusterRadius: 50 // Radius of each cluster when clustering points (defaults to 50)
-      });
-
-      // Add a layer for the cluster circles.
-      map.addLayer({
-        id: 'clusters',
-        type: 'circle',
-        source: 'entrances-geojson',
-        filter: ['has', 'point_count'],
-        maxzoom: 18, // FIX: Explicitly hide this layer at zoom 18 and beyond.
-        paint: {
-          // Use step expressions to style circles based on point count
-          'circle-color': [
-            'step',
-            ['get', 'point_count'],
-            '#51bbd6', // Blue for < 10 points
-            10,
-            '#f1f075', // Yellow for < 30 points
-            30,
-            '#f28cb1'  // Pink for >= 30 points
-          ],
-          'circle-radius': [
-            'step',
-            ['get', 'point_count'],
-            20, // 20px radius for < 10 points
-            10,
-            30, // 30px radius for < 30 points
-            30,
-            40  // 40px radius for >= 30 points
-          ]
+      // --- FIX FOR TIMING ISSUE: Wait for the source data to be ready ---
+      
+      // This function contains the logic to create the clusters.
+      const setupClusters = () => {
+        // First, check if the source has already been added to prevent errors.
+        if (map.getSource('entrances-geojson')) {
+          return; 
         }
-      });
 
-      // Add a layer for the text label on the cluster circles.
-      map.addLayer({
-        id: 'cluster-count',
-        type: 'symbol',
-        source: 'entrances-geojson',
-        filter: ['has', 'point_count'],
-        maxzoom: 18, // FIX: Explicitly hide this layer at zoom 18 and beyond.
-        layout: {
-          'text-field': '{point_count_abbreviated}',
-          'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
-          'text-size': 12
+        // Hide the original vector tile layer for entrances
+        map.setLayoutProperty('kn_bld_entrance', 'visibility', 'none');
+
+        // Now it's safe to query the features.
+        const entranceFeatures = map.querySourceFeatures('tegola', {
+          sourceLayer: 'kn_bld_entrance'
+        });
+
+        // If for some reason we still get no features, don't proceed.
+        if (!entranceFeatures.length) {
+          console.log("No entrance features found to cluster yet.");
+          return;
         }
-      });
 
-      // Add a layer for the unclustered, individual points.
-      map.addLayer({
-        id: 'unclustered-point',
-        type: 'circle',
-        source: 'entrances-geojson',
-        filter: ['!', ['has', 'point_count']],
-        paint: {
-          'circle-color': '#fc3f6e',
-          'circle-radius': 5,
-          'circle-stroke-width': 1,
-          'circle-stroke-color': '#fff'
+        console.log(`Found ${entranceFeatures.length} features to cluster.`);
+
+        // Create a new GeoJSON source for the entrances with clustering enabled.
+        map.addSource('entrances-geojson', {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: entranceFeatures
+          },
+          cluster: true,
+          clusterMaxZoom: 17,
+          clusterRadius: 50
+        });
+
+        // Add a layer for the cluster circles.
+        map.addLayer({
+          id: 'clusters',
+          type: 'circle',
+          source: 'entrances-geojson',
+          filter: ['has', 'point_count'],
+          maxzoom: 18,
+          paint: {
+            'circle-color': ['step', ['get', 'point_count'], '#51bbd6', 10, '#f1f075', 30, '#f28cb1'],
+            'circle-radius': ['step', ['get', 'point_count'], 20, 10, 30, 30, 40]
+          }
+        });
+
+        // Add a layer for the text label on the cluster circles.
+        map.addLayer({
+          id: 'cluster-count',
+          type: 'symbol',
+          source: 'entrances-geojson',
+          filter: ['has', 'point_count'],
+          maxzoom: 18,
+          layout: {
+            'text-field': '{point_count_abbreviated}',
+            'text-size': 12,
+            'text-allow-overlap': true
+          },
+          // FINAL FIX: Explicitly set the text color to make it visible.
+          paint: {
+            'text-color': '#ffffff'
+          }
+        });
+
+        // Add a layer for the unclustered, individual points.
+        map.addLayer({
+          id: 'unclustered-point',
+          type: 'circle',
+          source: 'entrances-geojson',
+          filter: ['!', ['has', 'point_count']],
+          paint: {
+            'circle-color': '#fc3f6e',
+            'circle-radius': 5,
+            'circle-stroke-width': 1,
+            'circle-stroke-color': '#fff'
+          }
+        });
+
+        // IMPORTANT: Once we've set up the clusters, we don't need to listen for this event anymore.
+        map.off('sourcedata', onSourceData);
+      };
+
+      // This is the event handler that waits for the data to load.
+      const onSourceData = (e) => {
+        // We only care about the event when our 'tegola' source has loaded its data.
+        if (e.sourceId === 'tegola' && map.isSourceLoaded('tegola')) {
+          setupClusters();
         }
-      });
+      };
 
-      // --- END OF NEW CLUSTERING LOGIC ---
+      // Listen for the 'sourcedata' event.
+      map.on('sourcedata', onSourceData);
 
 
+      // --- Other setup code from before ---
       map.addSource('highlight-source', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] }
@@ -245,7 +261,6 @@
       }
     }
 
-    // --- UPDATED LAYER TOGGLES ---
     document.getElementById('toggle-intervals').onchange = e =>
       map.setLayoutProperty('kn_intervals', 'visibility', e.target.checked ? 'visible' : 'none');
 
@@ -255,12 +270,12 @@
     document.getElementById('toggle-stations').onchange = e =>
       map.setLayoutProperty('kn_stations', 'visibility', e.target.checked ? 'visible' : 'none');
 
-    // This checkbox now controls the 3 new cluster layers
     document.getElementById('toggle-entrances').onchange = e => {
         const visibility = e.target.checked ? 'visible' : 'none';
-        map.setLayoutProperty('clusters', 'visibility', visibility);
-        map.setLayoutProperty('cluster-count', 'visibility', visibility);
-        map.setLayoutProperty('unclustered-point', 'visibility', visibility);
+        // Need to check if layers exist before changing them, as they are now loaded asynchronously
+        if (map.getLayer('clusters')) map.setLayoutProperty('clusters', 'visibility', visibility);
+        if (map.getLayer('cluster-count')) map.setLayoutProperty('cluster-count', 'visibility', visibility);
+        if (map.getLayer('unclustered-point')) map.setLayoutProperty('unclustered-point', 'visibility', visibility);
     };
 
 
@@ -272,25 +287,21 @@
 
     const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
 
-    // --- UPDATED CLICK HANDLER ---
     map.on('click', e => {
-      // Check for features in the cluster layers first
       const clusterFeatures = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
 
-      // If a cluster is clicked, zoom into it.
       if (clusterFeatures.length) {
         const clusterId = clusterFeatures[0].properties.cluster_id;
         map.getSource('entrances-geojson').getClusterExpansionZoom(clusterId, (err, zoom) => {
           if (err) return;
           map.easeTo({
             center: clusterFeatures[0].geometry.coordinates,
-            zoom: zoom + 0.5 // zoom in a little bit more than the expansion zoom
+            zoom: zoom + 0.5
           });
         });
         return;
       }
 
-      // If not a cluster, check for other features as before.
       const features = map.queryRenderedFeatures(e.point, {
         layers: ['kn_intervals', 'kn_buildings', 'kn_stations', 'unclustered-point']
       });
@@ -304,7 +315,6 @@
 
       const feature = features[0];
       
-      // For clustered points, the source is different
       const sourceId = feature.layer.id === 'unclustered-point' ? 'entrances-geojson' : 'tegola';
       const sourceLayer = feature.layer.id === 'unclustered-point' ? null : feature.layer['source-layer'];
       
@@ -329,7 +339,6 @@
       popup.setLngLat(e.lngLat).setHTML(html).addTo(map);
     });
 
-    // Add pointer cursor on hover for all interactive layers
     const interactiveLayers = ['kn_intervals', 'kn_buildings', 'kn_stations', 'clusters', 'unclustered-point'];
     interactiveLayers.forEach(layer => {
       map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
