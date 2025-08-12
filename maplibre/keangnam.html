@@ -42,6 +42,7 @@
   <div id="controls">
     <label><input type="checkbox" id="toggle-intervals" checked> Roads</label><br>
     <label><input type="checkbox" id="toggle-buildings" checked> Buildings</label><br>
+	<label><input type="checkbox" id="toggle-railways" checked> Railways</label><br>
     <label><input type="checkbox" id="toggle-stations" checked> Stations</label><br>
     <label><input type="checkbox" id="toggle-entrances" checked> Entrances</label>
   </div>
@@ -56,7 +57,11 @@
         sources: {
           osm: {
             type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tiles: [    
+				"https://a.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png",
+				"https://b.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png",
+				"https://c.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png"
+				],
             tileSize: 256,
             attribution: '© OpenStreetMap contributors'
           },
@@ -77,6 +82,13 @@
             'source-layer': 'kn_intervals',
             paint: { 'line-color': '#ff0000', 'line-width': 2 }
           },
+          {
+            id: 'kn_railways',
+            type: 'line',
+            source: 'tegola',
+            'source-layer': 'kn_railways',
+            paint: { 'line-color': '#5104b0', 'line-width': 2 }
+          },		  
           {
             id: 'kn_buildings',
             type: 'fill',
@@ -184,6 +196,9 @@
     document.getElementById('toggle-intervals').onchange = e =>
       map.setLayoutProperty('kn_intervals', 'visibility', e.target.checked ? 'visible' : 'none');
 
+    document.getElementById('toggle-railways').onchange = e =>
+      map.setLayoutProperty('kn_railways', 'visibility', e.target.checked ? 'visible' : 'none');
+	  
     document.getElementById('toggle-buildings').onchange = e =>
       map.setLayoutProperty('kn_buildings', 'visibility', e.target.checked ? 'visible' : 'none');
 
@@ -236,7 +251,7 @@
       popup.setLngLat(e.lngLat).setHTML(html).addTo(map);
     });
 
-    ['kn_intervals', 'kn_buildings', 'kn_stations', 'kn_bld_entrance'].forEach(layer => {
+    ['kn_intervals', 'kn_buildings', 'kn_stations', 'kn_railways', 'kn_bld_entrance'].forEach(layer => {
       map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
       map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
     });
