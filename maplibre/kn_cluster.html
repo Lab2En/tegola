@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Keangnam Buildings with Zoom-Based Styling</title>
+  <title>Keangnam Buildings with Clustering</title>
   <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
   <script src="https://unpkg.com/maplibre-gl@3.3.1/dist/maplibre-gl.js"></script>
   <link href="https://unpkg.com/maplibre-gl@3.3.1/dist/maplibre-gl.css" rel="stylesheet" />
@@ -42,9 +42,9 @@
   <div id="controls">
     <label><input type="checkbox" id="toggle-intervals" checked> Roads</label><br>
     <label><input type="checkbox" id="toggle-buildings" checked> Buildings</label><br>
-	<label><input type="checkbox" id="toggle-railways" checked> Railways</label><br>	
+	<label><input type="checkbox" id="toggle-railways" checked> Railways</label><br>
     <label><input type="checkbox" id="toggle-stations" checked> Stations</label><br>
-    <label><input type="checkbox" id="toggle-entrances" checked> Entrances</label>
+    <label><input type="checkbox" id="toggle-entrances" checked> Entrances (Clustered)</label>
   </div>
   <div id="zoom-level">Zoom: --</div>
 
@@ -54,8 +54,8 @@
       antialias: true,
       style: {
         version: 8,
-        // The glyphs URL is still needed for any potential text labels
-        glyphs: "https://sntglobal.net/fonts/{fontstack}/{range}.pbf",
+        // FIX: Added a 'glyphs' URL to provide the map with font data.
+        glyphs: "http://sntglobal.net/static/mbfonts/{fontstack}/{range}.pbf",
         sources: {
           osm: {
             type: 'raster',
@@ -96,53 +96,141 @@
             type: 'fill',
             source: 'tegola',
             'source-layer': 'kn_buildings',
-            paint: { 'fill-color': '#0786e0', 'fill-opacity': 0.8 }
+            paint: { 'fill-color': '#0786e0', 'fill-opacity': 0.8 },
+            minzoom: 0,
+            maxzoom: 24
           },
           {
             id: 'kn_stations',
             type: 'fill',
             source: 'tegola',
             'source-layer': 'kn_stations',
-            paint: { 'fill-color': '#b707ed', 'fill-opacity': 0.9 }
+            paint: { 'fill-color': '#b707ed', 'fill-opacity': 0.9 },
+            minzoom: 0,
+            maxzoom: 24
           },
-          // --- MODIFIED LAYER WITH ZOOM-BASED STYLING ---
+          // THIS ORIGINAL LAYER WILL BE HIDDEN AND REPLACED BY THE CLUSTERED LAYERS
           {
             id: 'kn_bld_entrance',
             type: 'circle',
             source: 'tegola',
             'source-layer': 'kn_bld_entrance',
             paint: {
+              'circle-radius': 5,
               'circle-color': '#fc3f6e',
-              'circle-stroke-color': '#ffffff',
-              
-              // Use 'interpolate' to change radius based on zoom
-              'circle-radius': [
-                'interpolate',
-                ['linear'],
-                ['zoom'],
-                10, 10,  // At zoom 12, radius is 1.5px (small dot)
-                18, 6     // At zoom 18, radius is 6px (large circle)
-              ],
-              
-              // Use 'interpolate' to change stroke width based on zoom
-              'circle-stroke-width': [
-                'interpolate',
-                ['linear'],
-                ['zoom'],
-                15, 0,    // At zoom 15, stroke is 0px (no stroke)
-                18, 1.5   // At zoom 17, stroke is 1.5px (visible stroke)
-              ]
-            }
+              'circle-stroke-color': '#dbcd07',
+              'circle-stroke-width': 1
+            },
+            minzoom: 0,
+            maxzoom: 24
           }
         ]
       },
-      center: [127.05, 37.512],
-      zoom: 12 // Start more zoomed out to see the effect
+      center: [127.05, 37.512], // Centered on Keangnam area
+      zoom: 15 // Start a bit more zoomed in
     });
 
     map.on('load', () => {
-      // All the complex cluster logic is now removed.
+      // --- FIX FOR TIMING ISSUE: Wait for the source data to be ready ---
       
+      // This function contains the logic to create the clusters.
+      const setupClusters = () => {
+        // First, check if the source has already been added to prevent errors.
+        if (map.getSource('entrances-geojson')) {
+          return; 
+        }
+
+        // Hide the original vector tile layer for entrances
+        map.setLayoutProperty('kn_bld_entrance', 'visibility', 'none');
+
+        // Now it's safe to query the features.
+        const entranceFeatures = map.querySourceFeatures('tegola', {
+          sourceLayer: 'kn_bld_entrance'
+        });
+
+        // If for some reason we still get no features, don't proceed.
+        if (!entranceFeatures.length) {
+          console.log("No entrance features found to cluster yet.");
+          return;
+        }
+
+        console.log(`Found ${entranceFeatures.length} features to cluster.`);
+
+        // Create a new GeoJSON source for the entrances with clustering enabled.
+        map.addSource('entrances-geojson', {
+          type: 'geojson',
+          data: {
+            type: 'FeatureCollection',
+            features: entranceFeatures
+          },
+          cluster: true,
+          clusterMaxZoom: 17,
+          clusterRadius: 50
+        });
+
+        // Add a layer for the cluster circles.
+        map.addLayer({
+          id: 'clusters',
+          type: 'circle',
+          source: 'entrances-geojson',
+          filter: ['has', 'point_count'],
+          maxzoom: 18,
+          paint: {
+            'circle-color': ['step', ['get', 'point_count'], '#51bbd6', 10, '#f1f075', 30, '#f28cb1'],
+            'circle-radius': ['step', ['get', 'point_count'], 20, 10, 30, 30, 40]
+          }
+        });
+
+        // Add a layer for the text label on the cluster circles.
+        map.addLayer({
+          id: 'cluster-count',
+          type: 'symbol',
+          source: 'entrances-geojson',
+          filter: ['has', 'point_count'],
+          maxzoom: 18,
+          layout: {
+            'text-field': '{point_count_abbreviated}',
+            'text-size': 12,
+			'text-font': ['Roboto Bold'],
+            'text-allow-overlap': true
+          },
+          // FINAL FIX: Explicitly set the text color to make it visible.
+          paint: {
+            'text-color': '#ffffff'
+          }
+        });
+
+        // Add a layer for the unclustered, individual points.
+        map.addLayer({
+          id: 'unclustered-point',
+          type: 'circle',
+          source: 'entrances-geojson',
+          filter: ['!', ['has', 'point_count']],
+          paint: {
+            'circle-color': '#fc3f6e',
+            'circle-radius': 5,
+            'circle-stroke-width': 1,
+            'circle-stroke-color': '#fff'
+          }
+        });
+
+        // IMPORTANT: Once we've set up the clusters, we don't need to listen for this event anymore.
+        map.off('sourcedata', onSourceData);
+      };
+
+      // This is the event handler that waits for the data to load.
+      const onSourceData = (e) => {
+        // We only care about the event when our 'tegola' source has loaded its data.
+        if (e.sourceId === 'tegola' && map.isSourceLoaded('tegola')) {
+          setupClusters();
+        }
+      };
+
+      // Listen for the 'sourcedata' event.
+      map.on('sourcedata', onSourceData);
+
+
+      // --- Other setup code from before ---
       map.addSource('highlight-source', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] }
@@ -186,12 +274,11 @@
       }
     }
 
-    // --- SIMPLIFIED LAYER TOGGLES ---
     document.getElementById('toggle-intervals').onchange = e =>
       map.setLayoutProperty('kn_intervals', 'visibility', e.target.checked ? 'visible' : 'none');
 	  
-    document.getElementById('toggle-railways').onchange = e =>
-      map.setLayoutProperty('kn_railways', 'visibility', e.target.checked ? 'visible' : 'none');	  
+	document.getElementById('toggle-railways').onchange = e =>
+      map.setLayoutProperty('kn_railways', 'visibility', e.target.checked ? 'visible' : 'none');
 
     document.getElementById('toggle-buildings').onchange = e =>
       map.setLayoutProperty('kn_buildings', 'visibility', e.target.checked ? 'visible' : 'none');
@@ -199,11 +286,14 @@
     document.getElementById('toggle-stations').onchange = e =>
       map.setLayoutProperty('kn_stations', 'visibility', e.target.checked ? 'visible' : 'none');
 
-    // This checkbox now controls the single, original entrances layer
     document.getElementById('toggle-entrances').onchange = e => {
         const visibility = e.target.checked ? 'visible' : 'none';
-        map.setLayoutProperty('kn_bld_entrance', 'visibility', visibility);
+        // Need to check if layers exist before changing them, as they are now loaded asynchronously
+        if (map.getLayer('clusters')) map.setLayoutProperty('clusters', 'visibility', visibility);
+        if (map.getLayer('cluster-count')) map.setLayoutProperty('cluster-count', 'visibility', visibility);
+        if (map.getLayer('unclustered-point')) map.setLayoutProperty('unclustered-point', 'visibility', visibility);
     };
+
 
     function updateZoomDisplay() {
       document.getElementById('zoom-level').innerText = `Zoom: ${map.getZoom().toFixed(2)}`;
@@ -213,11 +303,23 @@
 
     const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
 
-    // --- SIMPLIFIED CLICK HANDLER ---
     map.on('click', e => {
-      // No longer need to check for clusters.
+      const clusterFeatures = map.queryRenderedFeatures(e.point, { layers: ['clusters'] });
+
+      if (clusterFeatures.length) {
+        const clusterId = clusterFeatures[0].properties.cluster_id;
+        map.getSource('entrances-geojson').getClusterExpansionZoom(clusterId, (err, zoom) => {
+          if (err) return;
+          map.easeTo({
+            center: clusterFeatures[0].geometry.coordinates,
+            zoom: zoom + 0.5
+          });
+        });
+        return;
+      }
+
       const features = map.queryRenderedFeatures(e.point, {
-        layers: ['kn_intervals', 'kn_buildings', 'kn_railways', 'kn_stations', 'kn_bld_entrance']
+        layers: ['kn_intervals', 'kn_buildings', 'kn_railways', 'kn_stations', 'unclustered-point']
       });
 
       if (!features.length) {
@@ -229,11 +331,11 @@
 
       const feature = features[0];
       
-      // The source is always 'tegola' for these layers now.
-      const sourceId = 'tegola';
-      const sourceLayer = feature.layer['source-layer'];
+      const sourceId = feature.layer.id === 'unclustered-point' ? 'entrances-geojson' : 'tegola';
+      const sourceLayer = feature.layer.id === 'unclustered-point' ? null : feature.layer['source-layer'];
       
-      const queryOptions = { filter: ['==', 'id', feature.properties.id], sourceLayer: sourceLayer };
+      const queryOptions = { filter: ['==', 'id', feature.properties.id] };
+      if(sourceLayer) queryOptions.sourceLayer = sourceLayer;
 
       const fullFeatures = map.querySourceFeatures(sourceId, queryOptions);
 
@@ -253,8 +355,7 @@
       popup.setLngLat(e.lngLat).setHTML(html).addTo(map);
     });
 
-    // --- SIMPLIFIED INTERACTIVE LAYERS ---
-    const interactiveLayers = ['kn_intervals', 'kn_buildings', 'kn_railways', 'kn_stations', 'kn_bld_entrance'];
+    const interactiveLayers = ['kn_intervals', 'kn_buildings', 'kn_railways', 'kn_stations', 'clusters', 'unclustered-point'];
     interactiveLayers.forEach(layer => {
       map.on('mouseenter', layer, () => (map.getCanvas().style.cursor = 'pointer'));
       map.on('mouseleave', layer, () => (map.getCanvas().style.cursor = ''));
