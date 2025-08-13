@@ -40,7 +40,7 @@
 <div id="map"></div>
 <div id="controls">
   <label><input type="checkbox" id="toggle-provinces" checked> Provinces</label><br>
-  <label><input type="checkbox" id="toggle-districts" checked> Districts</label><br>
+  <label><input type="checkbox" id="toggle-districts"> Districts</label><br>
   <label><input type="checkbox" id="toggle-roads" checked> Roads</label><br>
   <label><input type="checkbox" id="toggle-parcels" checked> Parcels</label><br>
   <label><input type="checkbox" id="toggle-landvaluesubzone" checked> Value Point</label>
@@ -53,6 +53,7 @@ const map = new maplibregl.Map({
   antialias: true,
   style: {
     version: 8,
+	glyphs: "http://sntglobal.net/static/mbfonts/{fontstack}/{range}.pbf",
     sources: {
       osm: {
         type: 'raster',
@@ -84,10 +85,31 @@ const map = new maplibregl.Map({
         maxzoom: 24
       },
       {
+        id: 'province-labels',
+        type: 'symbol',
+        source: 'tegola',
+        'source-layer': 'provinces',
+        layout: {
+          'text-field': ['get', 'province_lao'],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': 14,
+          'text-anchor': 'center',
+          'symbol-placement': 'point'
+        },
+        paint: {
+          'text-color': '#f57d7d',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 2
+        },
+        minzoom: 0,
+        maxzoom: 24
+      },
+      {
         id: 'districts',
         type: 'fill',
         source: 'tegola',
         'source-layer': 'districts',
+		layout: { visibility: 'none' }, 
         paint: {
           'fill-color': '#05f7c7',
           'fill-outline-color': '#8b6bed',
@@ -96,6 +118,26 @@ const map = new maplibregl.Map({
         minzoom: 0,
         maxzoom: 24
       },
+	  {
+		id: 'district-labels',
+		type: 'symbol',
+		source: 'tegola', 
+		'source-layer': 'districts', 
+		layout: {
+		   'text-field': ['get', 'district_lao'],  
+		   'text-font': ['Noto Sans Regular'],      
+		   'text-size': 12,
+		   'text-anchor': 'center',
+		   'visibility': 'none'
+		},
+		paint: {
+		   'text-color': '#000000',
+		   'text-halo-color': '#ffffff',
+		   'text-halo-width': 1
+		},
+		minzoom: 0,
+        maxzoom: 24
+	  },	  
       {
         id: 'roads',
         type: 'line',
@@ -118,18 +160,18 @@ const map = new maplibregl.Map({
         minzoom: 0,
         maxzoom: 24
       },
-	  {
-		  id: 'parcels-outline',
-		  type: 'line',
-		  source: 'tegola',
-		  'source-layer': 'parcels',
-		  paint: {
-			'line-color': '#800000',    // dark red stroke, change as you want
-			'line-width': 1
-		  },
-		  minzoom: 0,
-		  maxzoom: 24
-	  },
+      {
+        id: 'parcels-outline',
+        type: 'line',
+        source: 'tegola',
+        'source-layer': 'parcels',
+        paint: {
+          'line-color': '#800000',
+          'line-width': 1
+        },
+        minzoom: 0,
+        maxzoom: 24
+      },
       {
         id: 'landvaluesubzone',
         type: 'circle',
@@ -143,7 +185,28 @@ const map = new maplibregl.Map({
         },
         minzoom: 0,
         maxzoom: 24
-      }
+      },
+	  {
+		id: 'landvaluesubzone-labels',
+		type: 'symbol',
+		source: 'tegola',
+		'source-layer': 'landvaluesubzone',
+		layout: {
+		   'text-field': ['to-string', ['get', 'value']], 
+		   'text-font': ['Noto Sans Regular'],
+		   'text-size': 12,
+		   'text-anchor': 'top',              // text appears below circle
+		   'text-offset': [0, 0.8],           // push label downward
+		   'symbol-placement': 'point'
+		},
+		paint: {
+		   'text-color': '#000000',
+		   'text-halo-color': '#ffffff',
+		   'text-halo-width': 1
+		},
+		minzoom: 10,
+		maxzoom: 24
+	  }	  
     ]
   },
   center: [102.6090, 17.9600],
@@ -151,13 +214,10 @@ const map = new maplibregl.Map({
 });
 
 map.on('load', () => {
-  // Highlight source for selected feature(s)
   map.addSource('highlight-source', {
     type: 'geojson',
     data: { type: 'FeatureCollection', features: [] }
   });
-
-  // Fill highlight layer (for polygons)
   map.addLayer({
     id: 'feature-highlight-fill',
     type: 'fill',
@@ -170,7 +230,6 @@ map.on('load', () => {
     layout: { visibility: 'none' }
   });
 
-  // Line highlight layer (for line geometries)
   map.addLayer({
     id: 'feature-highlight-line',
     type: 'line',
@@ -182,7 +241,6 @@ map.on('load', () => {
     layout: { visibility: 'none' }
   });
 
-  // Circle highlight layer (for points)
   map.addLayer({
     id: 'feature-highlight-circle',
     type: 'circle',
@@ -197,7 +255,6 @@ map.on('load', () => {
   });
 });
 
-// Helper to show only the correct highlight layer based on geometry type
 function setHighlightLayer(type) {
   const layers = ['feature-highlight-fill', 'feature-highlight-line', 'feature-highlight-circle'];
   layers.forEach(id => map.setLayoutProperty(id, 'visibility', 'none'));
@@ -211,7 +268,6 @@ function setHighlightLayer(type) {
   }
 }
 
-// Layer toggles (unchanged)
 document.getElementById('toggle-roads').addEventListener('change', function() {
   map.setLayoutProperty('roads', 'visibility', this.checked ? 'visible' : 'none');
 });
@@ -223,27 +279,32 @@ document.getElementById('toggle-parcels').addEventListener('change', function() 
 });
 
 document.getElementById('toggle-provinces').addEventListener('change', function() {
-  map.setLayoutProperty('provinces', 'visibility', this.checked ? 'visible' : 'none');
+  const visibility = this.checked ? 'visible' : 'none';
+  map.setLayoutProperty('provinces', 'visibility', visibility);
+  map.setLayoutProperty('province-labels', 'visibility', visibility);
 });
 document.getElementById('toggle-districts').addEventListener('change', function() {
-  map.setLayoutProperty('districts', 'visibility', this.checked ? 'visible' : 'none');
+  const visibility = this.checked ? 'visible' : 'none';
+  map.setLayoutProperty('districts', 'visibility', visibility);
+  map.setLayoutProperty('district-labels', 'visibility', visibility);
 });
 document.getElementById('toggle-landvaluesubzone').addEventListener('change', function() {
-  map.setLayoutProperty('landvaluesubzone', 'visibility', this.checked ? 'visible' : 'none');
+  const visibility = this.checked ? 'visible' : 'none';
+  map.setLayoutProperty('landvaluesubzone', 'visibility', visibility);
+  map.setLayoutProperty('landvaluesubzone-labels', 'visibility', visibility);
 });
 
-// Zoom display (unchanged)
 function updateZoomDisplay() {
   document.getElementById('zoom-level').innerText = `Zoom: ${map.getZoom().toFixed(2)}`;
 }
 map.on('zoom', updateZoomDisplay);
 map.on('load', updateZoomDisplay);
 
-// Popup instance
 const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
 
-// Click event to highlight & show popup
 map.on('click', e => {
+  const zoom = map.getZoom();
+  
   const features = map.queryRenderedFeatures(e.point, {
     layers: ['provinces', 'districts', 'roads', 'parcels', 'landvaluesubzone']
   });
@@ -257,10 +318,14 @@ map.on('click', e => {
     return;
   }
 
-  // Use the first clicked feature
   const feature = features[0];
+  
+  const layerId = feature.layer.id;
+  // Provinces & districts: only clickable at zoom <= 6
+  if ((layerId === 'provinces' || layerId === 'districts') && zoom > 6) {
+    return;
+  }  
 
-  // Query all features with same id across tiles from source for full highlight
   const fullFeatures = map.querySourceFeatures('tegola', {
     sourceLayer: feature.layer['source-layer'],
     filter: ['==', 'id', feature.properties.id]
@@ -275,7 +340,6 @@ map.on('click', e => {
 
   setHighlightLayer(feature.geometry.type);
 
-  // Build popup content: Feature type and all properties
   let html = `<strong>Feature type: ${feature.layer.id}</strong><br><table>`;
   for (const key in feature.properties) {
     html += `<tr><td><strong>${key}</strong></td><td>${feature.properties[key]}</td></tr>`;
@@ -285,7 +349,6 @@ map.on('click', e => {
   popup.setLngLat(e.lngLat).setHTML(html).addTo(map);
 });
 
-// Change mouse cursor to pointer on hover for interactive layers
 ['provinces', 'districts', 'roads', 'parcels', 'landvaluesubzone'].forEach(layer => {
   map.on('mouseenter', layer, () => map.getCanvas().style.cursor = 'pointer');
   map.on('mouseleave', layer, () => map.getCanvas().style.cursor = '');
